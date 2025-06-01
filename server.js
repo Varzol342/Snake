@@ -1,82 +1,97 @@
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-
+const express = require("express");
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+const http = require("http").createServer(app);
+const io = require("socket.io")(http);
+const path = require("path");
 
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, "public")));
 
 let players = {};
-let apples = [];
+let apple = spawnApple();
 
 function spawnApple() {
-  const x = Math.floor(Math.random() * 25);
-  const y = Math.floor(Math.random() * 25);
-  apples.push({ x, y });
-}
-
-function gameLoop() {
-  for (let id in players) {
-    const player = players[id];
-    if (!player.direction) continue;
-
-    // Avancer
-    player.x += player.direction.x;
-    player.y += player.direction.y;
-
-    // Collision avec pomme
-    apples.forEach((apple, index) => {
-      if (player.x === apple.x && player.y === apple.y) {
-        player.length++;
-        apples.splice(index, 1);
-        spawnApple();
-      }
-    });
-
-    // Limite du terrain
-    if (player.x < 0) player.x = 0;
-    if (player.y < 0) player.y = 0;
-    if (player.x > 24) player.x = 24;
-    if (player.y > 24) player.y = 24;
-  }
-
-  // Envoyer l'état du jeu
-  io.emit('state', { players, apples });
-}
-
-// Boucle toutes les 100ms
-setInterval(gameLoop, 100);
-
-// Gestion socket
-io.on('connection', socket => {
-  console.log('Joueur connecté:', socket.id);
-  players[socket.id] = {
+  return {
     x: Math.floor(Math.random() * 25),
     y: Math.floor(Math.random() * 25),
+  };
+}
+
+io.on("connection", (socket) => {
+  console.log("Nouveau joueur connecté :", socket.id);
+
+  players[socket.id] = {
+    id: socket.id,
+    x: Math.floor(Math.random() * 25),
+    y: Math.floor(Math.random() * 25),
+    tail: [],
     direction: { x: 0, y: 0 },
-    length: 3,
+    score: 0,
   };
 
-  if (apples.length === 0) spawnApple();
-
-  socket.on('direction', dir => {
-    players[socket.id].direction = dir;
+  socket.on("direction", (direction) => {
+    players[socket.id].direction = direction;
   });
 
-  socket.on('sprint', (active) => {
-    // optionnel pour future amélioration
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Joueur déconnecté:', socket.id);
+  socket.on("disconnect", () => {
+    console.log("Joueur déconnecté :", socket.id);
     delete players[socket.id];
   });
 });
 
-server.listen(PORT, () => {
-  console.log('Serveur démarré sur le port', PORT);
+function gameLoop() {
+  for (let id in players) {
+    const player = players[id];
+    movePlayer(player);
+    checkCollision(player);
+  }
+
+  io.emit("gameState", { players, apple });
+}
+
+function movePlayer(player) {
+  const newX = player.x + player.direction.x;
+  const newY = player.y + player.direction.y;
+
+  player.tail.unshift({ x: player.x, y: player.y });
+
+  if (player.tail.length > player.score) {
+    player.tail.pop();
+  }
+
+  player.x = newX;
+  player.y = newY;
+
+  // Collision avec les murs
+  if (player.x < 0 || player.x >= 25 || player.y < 0 || player.y >= 25) {
+    player.x = Math.floor(Math.random() * 25);
+    player.y = Math.floor(Math.random() * 25);
+    player.tail = [];
+    player.score = 0;
+  }
+}
+
+function checkCollision(player) {
+  // Pomme
+  if (player.x === apple.x && player.y === apple.y) {
+    player.score++;
+    apple = spawnApple();
+  }
+
+  // Collision avec soi-même
+  for (let segment of player.tail) {
+    if (player.x === segment.x && player.y === segment.y) {
+      player.x = Math.floor(Math.random() * 25);
+      player.y = Math.floor(Math.random() * 25);
+      player.tail = [];
+      player.score = 0;
+    }
+  }
+}
+
+setInterval(gameLoop, 100);
+
+http.listen(PORT, () => {
+  console.log(`Serveur démarré sur le port ${PORT}`);
 });
