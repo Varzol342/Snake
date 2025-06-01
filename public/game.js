@@ -9,6 +9,7 @@ let apples = [];
 
 socket.on('connect', () => {
   playerId = socket.id;
+  console.log("Connecté avec ID:", playerId);
 });
 
 // direction
@@ -36,13 +37,12 @@ window.addEventListener('keyup', e => {
   }
 });
 
-// dessiner un carré
+// dessiner
 function drawBlock(x, y, color = 'lime') {
   ctx.fillStyle = color;
   ctx.fillRect(x * blockSize, y * blockSize, blockSize - 1, blockSize - 1);
 }
 
-// recevoir état du serveur
 socket.on('state', state => {
   players = state.players;
   apples = state.apples;
@@ -53,19 +53,19 @@ function draw() {
   ctx.fillStyle = '#1e1e1e';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // pommes
+  // 🍎 pommes
   apples.forEach(apple => {
     drawBlock(apple.x, apple.y, 'red');
   });
 
-  // serpents
+  // 🐍 serpents
   for (let id in players) {
     const p = players[id];
     const color = id === playerId ? 'lime' : 'green';
 
-    // Simule un serpent avec des blocs superposés (longueur)
+    // Simule un corps (en affichant plusieurs blocs à la même position)
     for (let i = 0; i < p.length; i++) {
-      drawBlock(p.x, p.y, color); // même position, juste pour l’effet visuel
+      drawBlock(p.x, p.y, color);
     }
   }
 }
