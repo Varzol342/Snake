@@ -1,103 +1,150 @@
-const express = require("express");
+const express = require('express');
+const http = require('http');
+const socketIO = require('socket.io');
+const cors = require('cors');
+
 const app = express();
-const http = require("http").createServer(app);
-const io = require("socket.io")(http);
+const server = http.createServer(app);
+const io = socketIO(server, {
+  cors: {
+    origin: '*',
+  },
+});
+
+app.use(cors());
+app.use(express.static('public'));
+
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static("public"));
+let gameState = {
+  players: {},
+  apples: [],
+};
 
-const TILE = 10;
-const WIDTH = 400;
-const HEIGHT = 400;
-
-let players = {};
-let apple = generateApple();
-
-// Génère une nouvelle pomme à une position aléatoire
 function generateApple() {
   return {
-    x: Math.floor(Math.random() * (WIDTH / TILE)) * TILE,
-    y: Math.floor(Math.random() * (HEIGHT / TILE)) * TILE
+    x: Math.floor(Math.random() * 40),
+    y: Math.floor(Math.random() * 30)
   };
 }
 
-// Envoie le classement trié à tous les clients
-function sendLeaderboard() {
-  const leaderboard = Object.values(players)
-    .map(p => ({ id: p.id, score: p.score }))
-    .sort((a, b) => b.score - a.score);
-  io.emit("leaderboard", leaderboard);
+function resetPlayer(id) {
+  return {
+    snake: [{ x: Math.floor(Math.random() * 40), y: Math.floor(Math.random() * 30) }],
+    dir: { x: 0, y: 0 },
+    score: 0,
+    sprinting: false,
+    sprintCooldown: 0,
+  };
 }
 
-io.on("connection", (socket) => {
-  console.log("✅ Connexion :", socket.id);
+io.on('connection', socket => {
+  console.log(`🟢 ${socket.id} connected`);
 
-  players[socket.id] = {
-    id: socket.id,
-    x: 100,
-    y: 100,
-    tail: [],
-    score: 0
-  };
+  gameState.players[socket.id] = resetPlayer(socket.id);
 
-  socket.emit("init", { id: socket.id });
-  socket.emit("apple", apple);
-  io.emit("players", players);
-  sendLeaderboard();
-
-  // Quand un joueur bouge
-  socket.on("move", (data) => {
-    if (players[socket.id]) {
-      players[socket.id].x = data.x;
-      players[socket.id].y = data.y;
-      players[socket.id].tail = data.tail;
-      io.emit("players", players);
+  socket.on('direction', dir => {
+    if (gameState.players[socket.id]) {
+      gameState.players[socket.id].dir = dir;
     }
   });
 
-  // Quand un joueur mange une pomme
-  socket.on("eat", () => {
-    if (!players[socket.id]) return;
-
-    players[socket.id].score += 1;
-    apple = generateApple();
-
-    io.emit("apple", apple);
-    io.emit("players", players);
-    sendLeaderboard();
-  });
-
-  // Quand un joueur meurt (collision mur ou soi-même)
-  socket.on("dead", () => {
-    if (!players[socket.id]) return;
-
-    players[socket.id].score = 0;
-    players[socket.id].tail = [];
-    io.emit("players", players);
-    sendLeaderboard();
-  });
-
-  // Quand un joueur utilise le sprint
-  socket.on("sprint", () => {
-    const p = players[socket.id];
-    if (!p) return;
-
-    if (p.score > 0) {
-      p.score -= 1;
-      io.emit("players", players);
-      sendLeaderboard();
+  socket.on('sprint', isSprinting => {
+    if (gameState.players[socket.id]) {
+      gameState.players[socket.id].sprinting = isSprinting;
     }
   });
 
-  // Quand un joueur se déconnecte
-  socket.on("disconnect", () => {
-    console.log("❌ Déconnexion :", socket.id);
-    delete players[socket.id];
-    io.emit("players", players);
-    sendLeaderboard();
+  socket.on('disconnect', () => {
+    console.log(`🔴 ${socket.id} disconnected`);
+    delete gameState.players[socket.id];
   });
 });
 
-http.listen(PORT, () => {
-  console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
+function gameLoop() {
+  for (let id in gameState.players) {
+    const player = gameState.players[id];
+    if (!player) continue;
+
+    const head = { ...player.snake[0] };
+    head.x += player.dir.x;
+    head.y += player.dir.y;
+
+    // Mur
+    if (head.x < 0 || head.x >= 40 || head.y < 0 || head.y >= 30) {
+      gameState.players[id] = resetPlayer(id);
+      continue;
+    }
+
+    // Collision avec soi
+    if (player.snake.some((segment, i) => i !== 0 && segment.x === head.x && segment.y === head.y)) {
+      gameState.players[id] = resetPlayer(id);
+      continue;
+    }
+
+    // Collision avec autres
+    for (let otherId in gameState.players) {
+      if (otherId !== id) {
+        if (gameState.players[otherId].snake.some(s => s.x === head.x && s.y === head.y)) {
+          gameState.players[id] = resetPlayer(id);
+          break;
+        }
+      }
+    }
+
+    player.snake.unshift(head);
+
+    // Mange une pomme ?
+    let ate = false;
+    for (let i = 0; i < gameState.apples.length; i++) {
+      const apple = gameState.apples[i];
+      if (apple.x === head.x && apple.y === head.y) {
+        player.score++;
+        gameState.apples.splice(i, 1);
+        gameState.apples.push(generateApple());
+        ate = true;
+        break;
+      }
+    }
+
+    if (!ate) {
+      // Sprint consomme
+      if (player.sprinting && player.snake.length > 2) {
+        player.snake.pop();
+        player.snake.pop(); // perdre plus vite
+        player.score = Math.max(0, player.score - 1);
+      } else {
+        player.snake.pop();
+      }
+    }
+  }
+
+  // S'assurer qu’il y a toujours une pomme
+  while (gameState.apples.length < 1) {
+    gameState.apples.push(generateApple());
+  }
+
+  // 🔽 Envoi des données simplifiées
+  const simplifiedState = {
+    players: {},
+    apples: gameState.apples
+  };
+
+  for (let id in gameState.players) {
+    const p = gameState.players[id];
+    simplifiedState.players[id] = {
+      x: p.snake[0].x,
+      y: p.snake[0].y,
+      length: p.snake.length,
+      score: p.score
+    };
+  }
+
+  io.emit('state', simplifiedState);
+}
+
+setInterval(gameLoop, 100); // 🔁 10 FPS pour moins de lag
+
+server.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
