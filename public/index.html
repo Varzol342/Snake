@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snake Multijoueur</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: #fff;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 10px 0;
+      text-align: center;
+    }
+
+    #game {
+      border: 2px solid #fff;
+      background: #222;
+      width: 100%;
+      max-width: 400px;
+      height: 400px;
+      display: block;
+    }
+
+    #leaderboard {
+      margin-top: 10px;
+      background: #1a1a1a;
+      padding: 10px;
+      border-radius: 10px;
+      width: 100%;
+      max-width: 400px;
+      text-align: left;
+    }
+
+    #leaderboard h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      text-align: center;
+    }
+
+    #leaderboard div {
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    b {
+      color: #4caf50;
+    }
+
+    .controls {
+      display: none; /* caché par défaut, sauf sur mobile */
+      justify-content: center;
+      margin-top: 15px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: 60px 60px 60px;
+      grid-template-rows: 60px 60px 60px;
+      gap: 5px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .control-grid button {
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 8px;
+      font-size: 18px;
+      width: 60px;
+      height: 60px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🐍 Snake Multijoueur</h1>
+  <canvas id="game"></canvas>
+
+  <!-- Touches mobiles : cachées sur PC -->
+  <div class="controls" id="mobile-controls">
+    <div class="control-grid">
+      <div></div>
+      <button onclick="press('ArrowUp')">↑</button>
+      <div></div>
+      <button onclick="press('ArrowLeft')">←</button>
+      <button onclick="press('Shift')">⚡</button>
+      <button onclick="press('ArrowRight')">→</button>
+      <div></div>
+      <button onclick="press('ArrowDown')">↓</button>
+      <div></div>
+    </div>
+  </div>
+
+  <div id="leaderboard"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+  <script>
+    // Simulation de touches clavier pour les boutons tactiles
+    function press(key) {
+      const e = new KeyboardEvent("keydown", { key });
+      document.dispatchEvent(e);
+
+      if (key === "Shift") {
+        setTimeout(() => {
+          const up = new KeyboardEvent("keyup", { key });
+          document.dispatchEvent(up);
+        }, 200);
+      }
+    }
+
+    // Détection mobile
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      document.getElementById("mobile-controls").style.display = "flex";
+    }
+  </script>
+</body>
+</html>
